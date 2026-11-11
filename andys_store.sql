@@ -150,7 +150,7 @@ CREATE TABLE `products` (
 --
 
 CREATE TABLE `product_images` (
-  `id` bigint(20) UNSIGNED NOT NULL,
+  `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
   `product_id` bigint(20) UNSIGNED NOT NULL,
   `image_url` varchar(500) NOT NULL,
   `sort_order` tinyint(3) UNSIGNED NOT NULL DEFAULT 0
