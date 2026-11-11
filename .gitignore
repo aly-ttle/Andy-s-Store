@@ -1,0 +1,7 @@
+mail.local.php
+db.local.php
+.env
+vendor/
+.vscode/
+uploads/*
+!uploads/.gitkeep

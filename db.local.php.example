@@ -1,0 +1,8 @@
+<?php
+// Copy this file to db.local.php and set your local MySQL connection values.
+// Never commit db.local.php.
+define('DB_HOST', '127.0.0.1');
+define('DB_PORT', '3306');
+define('DB_NAME', 'andys_store');
+define('DB_USER', 'root');
+define('DB_PASS', '');

@@ -45,27 +45,39 @@ Administrators generate six-digit verification codes in **Admin → Customers** 
 - MySQL 8+ or MariaDB
 - XAMPP, WAMP, MAMP, or a PHP/MySQL hosting environment
 
+## Deploy to Railway
+1. Push the application files and the Railway deployment files (`Dockerfile` and `.dockerignore`) to the GitHub repository connected to Railway. Make sure `mail.local.php`, `db.local.php`, and `.env` are not committed.
+2. In Railway, create a project from the GitHub repository and add a MySQL service.
+3. In the web service's **Variables**, add the database variables using Railway's MySQL service references (replace `MySQL` with the actual database service name):
+
+   ```text
+   DB_HOST=${{MySQL.MYSQLHOST}}
+   DB_PORT=${{MySQL.MYSQLPORT}}
+   DB_NAME=${{MySQL.MYSQLDATABASE}}
+   DB_USER=${{MySQL.MYSQLUSER}}
+   DB_PASS=${{MySQL.MYSQLPASSWORD}}
+   ANDYS_ADMIN_USERNAME=<choose-a-private-admin-username>
+   ANDYS_ADMIN_PASSWORD=<choose-a-unique-strong-password>
+   ```
+
+   Add `ANDYS_GMAIL_ADDRESS` and `ANDYS_GMAIL_APP_PASSWORD` if account verification and password-reset emails should be sent.
+4. Import `andys_store.sql` into the Railway MySQL database using the database's connection details and a MySQL client. Do this before opening the app; the application performs some schema upgrades when it connects.
+5. In Railway, create a public domain for the web service. Railway supplies the `PORT` value used by the included Dockerfile.
+6. Open the public domain and test storefront, sign-in, checkout, and (if configured) email delivery.
+
+The admin login uses `ANDYS_ADMIN_USERNAME` and `ANDYS_ADMIN_PASSWORD`; there is no longer a built-in default admin password. Keep these secrets only in Railway Variables. The database and uploaded files must be backed up separately. Railway's application filesystem is ephemeral, so images uploaded from the admin panel or profile pages may be lost on redeploy; use persistent/object storage before relying on those uploads.
+
 ## Setup with XAMPP
 1. Copy the `andys_store_system` folder into `C:\\xampp\\htdocs\\`.
 2. Start **Apache** and **MySQL** in XAMPP.
 3. Open phpMyAdmin at `http://localhost/phpmyadmin`.
-4. Import `database.sql`. This creates the `andys_store` database, tables, five categories, the original catalog, and the additional photo-based products. Product photos from your ZIP are included in the `products/` folder and their relative paths are stored in the products table.
-5. Check `config.php` and update the database host/name/user/password for your environment.
+4. Import `andys_store.sql`. This creates the `andys_store` database, tables, five categories, the original catalog, and the additional photo-based products. Product photos from your ZIP are included in the `products/` folder and their relative paths are stored in the products table.
+5. Configure the database with environment variables or copy `db.local.php.example` to `db.local.php` and set your local database values.
 6. Configure the Gmail email settings above for password-reset emails.
 7. Visit the application URL.
 
-## Create the first admin account
-For safety, public registration always creates a **customer** account. Create the first admin using a one-time local script or promote an account directly in MySQL.
-
-Recommended simple method:
-1. Register a normal account from the Sign Up page.
-2. In phpMyAdmin, select the `andys_store` database and run this SQL, replacing the email with your registered admin email:
-
-```sql
-UPDATE users SET role = 'admin' WHERE email = 'your-admin-email@example.com';
-```
-
-3. Open `http://localhost/andys_store_system/index.php?page=admin` and sign in with that account. The admin page only accepts accounts whose database role is `admin`.
+## Configure admin sign-in
+Set `ANDYS_ADMIN_USERNAME` and `ANDYS_ADMIN_PASSWORD` in the environment before opening `index.php?page=admin`. The application has no built-in admin credentials.
 
 ## Notes before deployment
 - Prices from your uploaded product list are shown in Philippine pesos (₱). Product image paths come from your uploaded `products.zip` archive.
@@ -79,9 +91,9 @@ UPDATE users SET role = 'admin' WHERE email = 'your-admin-email@example.com';
 - Main storefront defaults to available Meals; categories and search let customers browse other items.
 - Orders are recorded as unpaid, with instructions to pay at the campus cashier and pick up food. This project does not collect online payments.
 - Customer notification dropdown shows recent order statuses.
-- Admin login: username `admin`, password `admin123` (demo credentials; change before deployment).
+- Admin login credentials are configured with `ANDYS_ADMIN_USERNAME` and `ANDYS_ADMIN_PASSWORD`.
 - Admin dashboard includes transaction/customer counts, paid revenue, admin display profile, and product create/edit/delete controls.
-- If you are upgrading an existing database, back it up and run the new schema additions from `database.sql`; a fresh database import is recommended for this starter version.
+- If you are upgrading an existing database, back it up and run the new schema additions from `andys_store.sql`; a fresh database import is recommended for this starter version.
 
 
 ## Admin new-order sound notifications

@@ -1,0 +1,5 @@
+<?php
+// Copy this file to mail.local.php and use a Google App Password.
+// Never commit mail.local.php.
+putenv('ANDYS_GMAIL_ADDRESS=your-address@example.com');
+putenv('ANDYS_GMAIL_APP_PASSWORD=your-app-password');
