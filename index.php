@@ -123,6 +123,25 @@ if ($page === 'admin-notifications') {
     echo json_encode(['orders'=>$orders, 'checked'=>$checked], JSON_UNESCAPED_UNICODE); exit;
   } catch (Throwable $ex) { http_response_code(500); echo json_encode(['error'=>'Could not load order notifications']); exit; }
 }
+if ($page === 'customer-order-notifications') {
+  header('Content-Type: application/json; charset=utf-8');
+  $customer = current_user();
+  if (!$customer || $customer['role'] !== 'customer') { http_response_code(403); echo json_encode(['error'=>'Customer access required']); exit; }
+  try {
+    $stmt = db()->prepare('SELECT id,status FROM orders WHERE user_id=? ORDER BY id');
+    $stmt->execute([$customer['id']]);
+    $orders = $stmt->fetchAll();
+    $currentStatuses = [];
+    foreach ($orders as $order) {
+      $orderId = (int) $order['id'];
+      $currentStatuses[$orderId] = (string) $order['status'];
+    }
+    echo json_encode(['orders' => $currentStatuses], JSON_UNESCAPED_UNICODE); exit;
+  } catch (Throwable $ex) {
+    error_log('Andys Store customer order notification request failed: ' . $ex->getMessage());
+    http_response_code(500); echo json_encode(['error'=>'Could not load order updates']); exit;
+  }
+}
 $user = current_user();
 try {
   if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -699,6 +718,7 @@ try {
 
           $pdo->commit();
           unset($_SESSION['cart']);
+          $_SESSION['order_just_placed'] = (int) $orderId;
           flash('Order #' . $orderId . ' placed! Status: pending.');
           redirect('index.php?page=orders');
         } catch (Throwable $ex) {
@@ -1876,11 +1896,20 @@ function active($p,$current){return $p===$current?'active':'';}
   <?php if (!$user): ?>
     <p>Please <a href="index.php?page=login">log in</a> to view orders.</p>
   <?php else:
+    $justPlacedOrderId = (int) ($_SESSION['order_just_placed'] ?? 0);
+    unset($_SESSION['order_just_placed']);
     $st = $pdo->prepare('SELECT * FROM orders WHERE user_id=? ORDER BY created_at DESC');
     $st->execute([$user['id']]);
     $orders = $st->fetchAll();
   ?>
     <div class="admin-panel">
+      <div class="new-order-alert-head">
+        <div>
+          <strong>Order updates</strong>
+          <p class="muted" id="customer-order-sound-state">Enable sound to hear order confirmations and status changes while this page is open.</p>
+        </div>
+        <button type="button" class="pill small" id="enable-customer-order-sound">Enable order sound</button>
+      </div>
       <?php if (!$orders): ?>
         No orders yet. <a href="index.php">Browse the menu</a>.
       <?php else: ?>
@@ -1898,7 +1927,7 @@ function active($p,$current){return $p===$current?'active':'';}
               <?php endforeach; ?>
               <p class="order-item-name"><?= e($o['notes'] ?: 'Pickup at the campus canteen.') ?></p>
             </div>
-            <span class="status"><?= e(ucfirst($o['status'])) ?></span>
+            <span class="status customer-order-status" data-order-id="<?= (int) $o['id'] ?>"><?= e(ucfirst($o['status'])) ?></span>
             <strong>₱<?= number_format($o['total'], 2) ?></strong>
             <small>Pay at cashier · <?= e(ucfirst($o['payment_status'] ?? 'unpaid')) ?></small>
           </div>
@@ -1907,6 +1936,90 @@ function active($p,$current){return $p===$current?'active':'';}
     </div>
   <?php endif; ?>
 </main>
+<?php if ($user && $user['role'] === 'customer'): ?>
+<script>
+(() => {
+  const enable = document.getElementById('enable-customer-order-sound');
+  const state = document.getElementById('customer-order-sound-state');
+  const justPlacedOrderId = <?= (int) ($justPlacedOrderId ?? 0) ?>;
+  const knownStatuses = new Map(
+    Array.from(document.querySelectorAll('.customer-order-status'), element => [
+      Number(element.dataset.orderId),
+      element.textContent.trim().toLowerCase()
+    ])
+  );
+  let audioContext = null, soundEnabled = false, busy = false;
+
+  function ding() {
+    if (!soundEnabled || !audioContext) return;
+    const now = audioContext.currentTime;
+    [[1320, 0], [1760, 0.13]].forEach(([frequency, delay]) => {
+      const oscillator = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      oscillator.type = 'sine';
+      oscillator.frequency.value = frequency;
+      gain.gain.setValueAtTime(0.0001, now + delay);
+      gain.gain.exponentialRampToValueAtTime(0.18, now + delay + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + delay + 0.38);
+      oscillator.connect(gain);
+      gain.connect(audioContext.destination);
+      oscillator.start(now + delay);
+      oscillator.stop(now + delay + 0.4);
+    });
+  }
+
+  enable.addEventListener('click', async () => {
+    try {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) throw new Error('Web Audio is not supported.');
+      if (!audioContext) audioContext = new AudioContextClass();
+      await audioContext.resume();
+      soundEnabled = true;
+      enable.textContent = 'Sound enabled ✓';
+      state.textContent = justPlacedOrderId
+        ? `Order #${justPlacedOrderId} was placed. Sound is enabled for status updates.`
+        : 'Sound is enabled for status updates while this page is open.';
+      ding();
+      poll();
+    } catch (error) {
+      state.textContent = 'Could not enable sound. Check your browser audio settings.';
+    }
+  });
+
+  async function poll() {
+    if (busy) return;
+    busy = true;
+    try {
+      const response = await fetch('index.php?page=customer-order-notifications', {
+        cache: 'no-store',
+        credentials: 'same-origin'
+      });
+      if (!response.ok) throw new Error('Could not load order updates.');
+      const data = await response.json();
+      Object.entries(data.orders || {}).forEach(([id, status]) => {
+        const orderId = Number(id);
+        const previousStatus = knownStatuses.get(orderId);
+        const currentStatus = String(status).toLowerCase();
+        const statusElement = document.querySelector(`.customer-order-status[data-order-id="${orderId}"]`);
+        if (statusElement) statusElement.textContent = currentStatus.charAt(0).toUpperCase() + currentStatus.slice(1);
+        if (previousStatus && previousStatus !== currentStatus && soundEnabled) {
+          state.textContent = `Order #${orderId} status changed to ${currentStatus}.`;
+          ding();
+        }
+        knownStatuses.set(orderId, currentStatus);
+      });
+    } catch (error) {
+      state.textContent = soundEnabled ? 'Sound enabled; reconnecting to order updates…' : state.textContent;
+    } finally {
+      busy = false;
+    }
+  }
+
+  poll();
+  window.setInterval(poll, 5000);
+})();
+</script>
+<?php endif; ?>
 <?php else: ?><main class="shell page-pad"><h1>Page not found</h1><a href="index.php">Return to store</a></main><?php endif; ?>
 <script>
 document.addEventListener('click', function(event) {

@@ -13,6 +13,7 @@ A responsive PHP + MySQL starter system styled to match the supplied reference: 
 - Shopping cart merges repeated additions of the same product and option, keeps different meal options separate, supports quantity updates and item removal, and carries the correct prices through checkout
 - Meals support editable price options (meal with rice/meal only); beverages, snacks, and merienda use a standard price
 - Customer orders and order history
+- Admins can enable an in-browser sound for new orders; customers can enable sounds for order confirmation and status updates while My Orders remains open (browsers require a click to enable audio)
 - Checkout requires customers to choose pickup or delivery; delivery orders require a building and room location saved with the order and shown to admins
 - Checkout supports campus pickup or delivery; delivery requires a building and room location, saved with the order for customers and admins
 - Admin dashboard with menu item counts, add-item form, publish/hide menu items, and an order-management table showing customer, ordered items, total, date, and status
