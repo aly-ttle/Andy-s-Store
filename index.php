@@ -123,6 +123,7 @@ if ($page === 'admin-notifications') {
     echo json_encode(['orders'=>$orders, 'checked'=>$checked], JSON_UNESCAPED_UNICODE); exit;
   } catch (Throwable $ex) { http_response_code(500); echo json_encode(['error'=>'Could not load order notifications']); exit; }
 }
+$user = current_user();
 try {
   if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
