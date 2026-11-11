@@ -196,3 +196,8 @@
 .edit-product .product-admin-image-option span{display:flex;align-items:center;gap:3px;font-size:10px;font-weight:400}
 .edit-product .product-admin-image-option input{width:auto;padding:0}
 @media(max-width:600px){.product-gallery-main{height:180px}}
+.auth-form .password-input-wrap{display:block;position:relative}
+.auth-form .password-input-wrap input{padding-right:46px}
+.auth-form .password-toggle{position:absolute;top:50%;right:7px;display:grid;place-items:center;width:34px;height:34px;padding:6px;border:0;border-radius:8px;background:transparent;color:var(--muted);transform:translateY(-50%)}
+.auth-form .password-toggle:hover,.auth-form .password-toggle:focus-visible{background:#f6e8e7;color:var(--rose-dark)}
+.auth-form .password-toggle svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}

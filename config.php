@@ -315,9 +315,11 @@ function require_customer(): void {
     $stmt = db()->prepare("SELECT account_status,email_verified_at FROM users WHERE id=? AND role='customer' LIMIT 1");
     $stmt->execute([current_user()['id']]);
     $account = $stmt->fetch();
-    if (!$account || !$account['email_verified_at']) {
+    if (!$account || !$account['email_verified_at'] || $account['account_status'] === 'rejected') {
         unset($_SESSION['user']);
-        $message = 'Verify your email address before using your account.';
+        $message = $account && $account['account_status'] === 'rejected'
+            ? 'Your account access has been revoked. Contact the store administrator for help.'
+            : 'Verify your email address before using your account.';
         flash($message);
         redirect('index.php?page=login');
     }

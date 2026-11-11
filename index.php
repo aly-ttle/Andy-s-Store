@@ -128,6 +128,12 @@ if ($page === 'customer-order-notifications') {
   $customer = current_user();
   if (!$customer || $customer['role'] !== 'customer') { http_response_code(403); echo json_encode(['error'=>'Customer access required']); exit; }
   try {
+    $accountStmt = db()->prepare("SELECT account_status,email_verified_at FROM users WHERE id=? AND role='customer' LIMIT 1");
+    $accountStmt->execute([$customer['id']]);
+    $account = $accountStmt->fetch();
+    if (!$account || !$account['email_verified_at'] || $account['account_status'] === 'rejected') {
+      http_response_code(403); echo json_encode(['error'=>'Customer account access is disabled']); exit;
+    }
     $stmt = db()->prepare('SELECT id,status FROM orders WHERE user_id=? ORDER BY id');
     $stmt->execute([$customer['id']]);
     $orders = $stmt->fetchAll();
@@ -143,6 +149,10 @@ if ($page === 'customer-order-notifications') {
   }
 }
 $user = current_user();
+if ($user && $user['role'] === 'customer') {
+  require_customer();
+  $user = current_user();
+}
 try {
   if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
@@ -247,6 +257,9 @@ try {
         if (!$user || !password_verify($pass, $user['password_hash'])) {
           throw new Exception('Email or password is incorrect.');
         }
+        if ($user['account_status'] === 'rejected') {
+          throw new Exception('This account has been disabled. Contact the store administrator for help.');
+        }
         if (!$user['email_verified_at']) {
           throw new Exception('Verify your email address using the code sent to your email before signing in.');
         }
@@ -270,7 +283,7 @@ try {
         }
 
         $pdo = db();
-        $stmt = $pdo->prepare("SELECT u.id,r.token_hash,r.attempts,(r.expires_at > UTC_TIMESTAMP()) AS is_valid FROM users u JOIN password_reset_codes r ON r.user_id=u.id WHERE u.email=? AND u.role='customer' AND u.email_verified_at IS NOT NULL LIMIT 1");
+        $stmt = $pdo->prepare("SELECT u.id,r.token_hash,r.attempts,(r.expires_at > UTC_TIMESTAMP()) AS is_valid FROM users u JOIN password_reset_codes r ON r.user_id=u.id WHERE u.email=? AND u.role='customer' AND u.account_status<>'rejected' AND u.email_verified_at IS NOT NULL LIMIT 1");
         $stmt->execute([$email]);
         $reset = $stmt->fetch();
         if (!$reset || !(int) $reset['is_valid']) {
@@ -306,7 +319,7 @@ try {
         $email = strtolower(trim($_POST['email'] ?? ''));
         if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
           $pdo = db();
-          $stmt = $pdo->prepare("SELECT id,name,email FROM users WHERE email=? AND role='customer' AND email_verified_at IS NOT NULL LIMIT 1");
+          $stmt = $pdo->prepare("SELECT id,name,email FROM users WHERE email=? AND role='customer' AND account_status<>'rejected' AND email_verified_at IS NOT NULL LIMIT 1");
           $stmt->execute([$email]);
           $customer = $stmt->fetch();
           if ($customer) {
@@ -353,7 +366,7 @@ try {
             throw new Exception('Customer account not found.');
           }
         }
-        flash($accountStatus === 'approved' ? 'Customer account approved.' : 'Customer account rejected.');
+        flash($accountStatus === 'approved' ? 'Customer access is active.' : 'Customer access has been revoked. The account remains in the customer directory for records.');
         redirect('index.php?page=admin-dashboard&section=customers');
 
       case 'admin_login':
@@ -371,9 +384,7 @@ try {
         redirect('index.php?page=admin-dashboard');
 
       case 'save_profile':
-        if (!current_user() || current_user()['role'] !== 'customer') {
-          throw new Exception('Please sign in as a customer.');
-        }
+        require_customer();
 
         $name = trim($_POST['name'] ?? '');
         $phone = trim($_POST['phone'] ?? '');
@@ -1068,8 +1079,8 @@ function active($p,$current){return $p===$current?'active':'';}
             <input type="hidden" name="action" value="reset_customer_password">
             <label>Email address<input name="email" type="email" required value="<?= e($_SESSION['reset_email'] ?? '') ?>" placeholder="you@university.edu"></label>
             <label>Email reset PIN<input name="reset_code" required minlength="16" maxlength="16" pattern="[A-Fa-f0-9]{16}" autocomplete="one-time-code" placeholder="16-character PIN"></label>
-            <label>New password<input name="password" type="password" minlength="8" required autocomplete="new-password" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[\x21-\x2F\x3A-\x40\x5B-\x60\x7B-\x7E]).{8,}" title="Use at least 8 characters, including an uppercase letter, a lowercase letter, and a special character." placeholder="Uppercase, lowercase & symbol (8+)"></label>
-            <label>Confirm new password<input name="confirm_password" type="password" minlength="8" required autocomplete="new-password"></label>
+            <label>New password<span class="password-input-wrap"><input name="password" type="password" minlength="8" required autocomplete="new-password" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[\x21-\x2F\x3A-\x40\x5B-\x60\x7B-\x7E]).{8,}" title="Use at least 8 characters, including an uppercase letter, a lowercase letter, and a special character." placeholder="Uppercase, lowercase & symbol (8+)"><button class="password-toggle" type="button" aria-label="Show password" aria-pressed="false"><svg class="eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg><svg class="eye-closed" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="m3 3 18 18M10.6 10.6a2 2 0 0 0 2.8 2.8"/><path d="M9.9 5.2A10.7 10.7 0 0 1 12 5c6.4 0 10 7 10 7a15.8 15.8 0 0 1-3.1 3.8M6.2 6.2C3.5 8 2 12 2 12s3.6 7 10 7c1.2 0 2.3-.2 3.3-.6"/></svg></button></span></label>
+            <label>Confirm new password<span class="password-input-wrap"><input name="confirm_password" type="password" minlength="8" required autocomplete="new-password"><button class="password-toggle" type="button" aria-label="Show password" aria-pressed="false"><svg class="eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg><svg class="eye-closed" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="m3 3 18 18M10.6 10.6a2 2 0 0 0 2.8 2.8"/><path d="M9.9 5.2A10.7 10.7 0 0 1 12 5c6.4 0 10 7 10 7s-1.2 2.5-3.1 3.8M6.2 6.2C3.5 8 2 12 2 12s3.6 7 10 7c1.2 0 2.3-.2 3.3-.6"/></svg></button></span></label>
             <button class="pill full">Update Password</button>
           </form>
         <?php endif; ?>
@@ -1134,7 +1145,7 @@ function active($p,$current){return $p===$current?'active':'';}
           <label>Username<input name="username" required autocomplete="username"></label>
         <?php endif; ?>
 
-          <label>Password<input name="password" type="password" minlength="8" required placeholder="<?= $page === 'signup' ? 'Uppercase, lowercase & symbol (8+)' : 'Password' ?>" <?= $page === 'signup' ? 'autocomplete="new-password" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[\x21-\x2F\x3A-\x40\x5B-\x60\x7B-\x7E]).{8,}" title="Use at least 8 characters, including an uppercase letter, a lowercase letter, and a special character."' : 'autocomplete="current-password"' ?>></label>
+          <label>Password<span class="password-input-wrap"><input name="password" type="password" minlength="8" required placeholder="<?= $page === 'signup' ? 'Uppercase, lowercase & symbol (8+)' : 'Password' ?>" <?= $page === 'signup' ? 'autocomplete="new-password" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[\x21-\x2F\x3A-\x40\x5B-\x60\x7B-\x7E]).{8,}" title="Use at least 8 characters, including an uppercase letter, a lowercase letter, and a special character."' : 'autocomplete="current-password"' ?>><button class="password-toggle" type="button" aria-label="Show password" aria-pressed="false"><svg class="eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg><svg class="eye-closed" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="m3 3 18 18M10.6 10.6a2 2 0 0 0 2.8 2.8"/><path d="M9.9 5.2A10.7 10.7 0 0 1 12 5c6.4 0 10 7 10 7s-3.6 7-10 7S2 12 2 12s1.2-2.5 3.1-3.8M6.2 6.2Z"/></svg></button></span></label>
           <button class="pill full"><?= $page === 'signup' ? 'Create Account' : 'Sign In' ?></button>
       </form>
       <?php endif; ?>
@@ -1173,7 +1184,7 @@ function active($p,$current){return $p===$current?'active':'';}
       <a class="side-link <?= $adminSection === 'dashboard' ? 'active' : '' ?>" href="index.php?page=admin-dashboard&section=dashboard"><span class="side-icon">▦</span> Dashboard</a>
       <a class="side-link <?= $adminSection === 'orders' ? 'active' : '' ?>" href="index.php?page=admin-dashboard&section=orders"><span class="side-icon">▤</span> Orders <span class="side-badge"><?= $pdo->query("SELECT COUNT(*) FROM orders WHERE status='pending'")->fetchColumn() ?></span></a>
       <a class="side-link <?= $adminSection === 'products' ? 'active' : '' ?>" href="index.php?page=admin-dashboard&section=products"><span class="side-icon">♧</span> Menu & Products</a>
-      <a class="side-link <?= $adminSection === 'customers' ? 'active' : '' ?>" href="index.php?page=admin-dashboard&section=customers"><span class="side-icon">♙</span> Customers <span class="side-badge"><?= $pdo->query("SELECT COUNT(*) FROM users WHERE role='customer' AND account_status='pending'")->fetchColumn() ?></span></a>
+      <a class="side-link <?= $adminSection === 'customers' ? 'active' : '' ?>" href="index.php?page=admin-dashboard&section=customers"><span class="side-icon">♙</span> Customers <span class="side-badge" aria-label="Total customer accounts"><?= $pdo->query("SELECT COUNT(*) FROM users WHERE role='customer'")->fetchColumn() ?></span></a>
       <a class="side-link <?= $adminSection === 'reports' ? 'active' : '' ?>" href="index.php?page=admin-dashboard&section=reports"><span class="side-icon">↗</span> Sales & Reports</a>
 
       <div class="sidebar-spacer"></div>
@@ -1533,7 +1544,7 @@ function active($p,$current){return $p===$current?'active':'';}
                   <td><?= e(($cr['school_type'] ?? 'university') === 'lhs' ? 'LHS · ' . ($cr['course'] ?? '') . ' · ' . ($cr['year_level'] ?? '') . (!empty($cr['strand']) ? ' · ' . $cr['strand'] : '') . ' · ' . ($cr['section'] ?? '') : ($cr['course'] ?? '—') . ' · ' . ($cr['year_level'] ?? '') . ' · ' . ($cr['section'] ?? '')) ?></td>
                   <td><?= e($cr['created_at'] ?? '—') ?></td>
                   <td>
-                    <span class="status"><?= e(ucfirst($cr['account_status'])) ?></span>
+                    <span class="status"><?= $cr['account_status'] === 'rejected' ? 'Revoked' : e(ucfirst($cr['account_status'])) ?></span>
                   </td>
                   <td>
                     <?= $cr['email_verified_at'] ? 'Verified' : 'Not verified' ?>
@@ -1564,14 +1575,14 @@ function active($p,$current){return $p===$current?'active':'';}
                         <input type="hidden" name="action" value="update_customer_approval">
                         <input type="hidden" name="user_id" value="<?= (int) $cr['id'] ?>">
                         <input type="hidden" name="account_status" value="approved">
-                        <button class="outline small">Approve</button>
+                        <button class="outline small">Restore access</button>
                       </form>
                     <?php else: ?>
                       <form method="post" class="status-form" onsubmit="return confirm('Revoke this customer’s account access?')">
                         <input type="hidden" name="action" value="update_customer_approval">
                         <input type="hidden" name="user_id" value="<?= (int) $cr['id'] ?>">
                         <input type="hidden" name="account_status" value="rejected">
-                        <button class="outline small danger">Revoke</button>
+                        <button class="outline small danger">Revoke access</button>
                       </form>
                     <?php endif; ?>
                   </td>
@@ -2083,6 +2094,17 @@ document.addEventListener('click', function(event) {
 });
 document.addEventListener('keydown', function(event) {
   if (event.key === 'Escape') document.querySelectorAll('.account-menu[open]').forEach(function(menu) { menu.removeAttribute('open'); });
+});
+document.querySelectorAll('.password-toggle').forEach(function(button) {
+  button.addEventListener('click', function() {
+    const input = button.parentElement.querySelector('input');
+    const showing = input.type === 'password';
+    input.type = showing ? 'text' : 'password';
+    button.setAttribute('aria-pressed', showing ? 'true' : 'false');
+    button.setAttribute('aria-label', showing ? 'Hide password' : 'Show password');
+    button.querySelector('.eye-open').hidden = showing;
+    button.querySelector('.eye-closed').hidden = !showing;
+  });
 });
 const schoolTypeField = document.getElementById('school-type');
 if (schoolTypeField) {
