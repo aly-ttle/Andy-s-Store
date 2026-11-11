@@ -5,3 +5,4 @@ mail.local.php
 db.local.php
 .env
 uploads/*
+check_mail_config.php

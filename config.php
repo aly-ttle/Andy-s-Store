@@ -1,12 +1,9 @@
 <?php
-// Email uses PHPMailer with Gmail SMTP. Credentials are NOT stored in this file.
-// Set ANDYS_GMAIL_ADDRESS and ANDYS_GMAIL_APP_PASSWORD as environment variables,
-// or (easier on XAMPP) copy mail.local.php.example to mail.local.php and fill it in.
+// Set Resend credentials as environment variables or in a local-only mail.local.php.
 if (is_file(__DIR__ . '/mail.local.php')) { require_once __DIR__ . '/mail.local.php'; }
 
-// Install Composer dependencies and load local-only overrides when present.
+// Load Composer dependencies.
 require_once __DIR__ . '/vendor/autoload.php';
-require_once __DIR__ . '/EmailService.php';
 
 // On a live host (e.g. InfinityFree) copy db.local.php.example to db.local.php and fill in
 // your hosting database details. db.local.php is never committed to GitHub.
@@ -102,61 +99,66 @@ function db(): PDO {
 }
 
 function mail_settings(): array {
-    $username = trim((string) getenv('ANDYS_GMAIL_ADDRESS'));
-    $appPassword = str_replace(' ', '', (string) getenv('ANDYS_GMAIL_APP_PASSWORD'));
-    if ($username === '' || $appPassword === '' || !filter_var($username, FILTER_VALIDATE_EMAIL)) {
-        throw new RuntimeException('Email delivery is not configured. Set ANDYS_GMAIL_ADDRESS and ANDYS_GMAIL_APP_PASSWORD (see mail.local.php.example).');
+    $apiKey = trim((string) getenv('RESEND_API_KEY'));
+    $fromEmail = trim((string) getenv('RESEND_FROM_EMAIL'));
+    if ($apiKey === '' || !filter_var($fromEmail, FILTER_VALIDATE_EMAIL)) {
+        throw new RuntimeException('Email delivery is not configured. Set RESEND_API_KEY and RESEND_FROM_EMAIL.');
     }
     return [
-        'host'       => 'smtp.gmail.com',
-        'username'   => $username,
-        'password'   => $appPassword,
-        'port'       => 587,
-        'from_email' => $username,
-        'from_name'  => "Andy's Store",
+        'api_key' => $apiKey,
+        'from' => "Andy's Store <{$fromEmail}>",
     ];
 }
 
 function send_account_email(string $to, string $name, string $subject, string $htmlBody, string $textBody): void {
     $cfg = mail_settings();
-    $mail = new PHPMailer\PHPMailer\PHPMailer(true);
-    try {
-        $mail->isSMTP();
-        $mail->SMTPDebug = 0;
-        $mail->Debugoutput = 'error_log';
-        $mail->Host = $cfg['host'];
-        $mail->Timeout = 10;
-        $mail->SMTPAuth = true;
-        $mail->Username = $cfg['username'];
-        $mail->Password = $cfg['password'];
-        $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
-        $mail->Port = $cfg['port'];
-        $mail->CharSet = PHPMailer\PHPMailer\PHPMailer::CHARSET_UTF8;
-        $mail->setFrom($cfg['from_email'], $cfg['from_name']);
-        $mail->addAddress($to, $name);
-        $mail->isHTML(true);
-        $mail->Subject = $subject;
-        $mail->Body = $htmlBody;
-        $mail->AltBody = $textBody;
-        $mail->send();
-    } catch (Throwable $ex) {
-        error_log('Andys Store email delivery failed: ' . $mail->ErrorInfo);
-        throw new RuntimeException('Could not send the email. Check the Gmail address, app password, and SMTP connection.');
+    $payload = json_encode([
+        'from' => $cfg['from'],
+        'to' => [$to],
+        'subject' => $subject,
+        'html' => $htmlBody,
+        'text' => $textBody,
+    ], JSON_THROW_ON_ERROR);
+
+    $curl = curl_init('https://api.resend.com/emails');
+    if ($curl === false) {
+        throw new RuntimeException('Could not initialize the email API request.');
+    }
+    curl_setopt_array($curl, [
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => $payload,
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $cfg['api_key'],
+            'Content-Type: application/json',
+            'Accept: application/json',
+        ],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CONNECTTIMEOUT => 5,
+        CURLOPT_TIMEOUT => 15,
+    ]);
+
+    $response = curl_exec($curl);
+    $curlError = curl_error($curl);
+    $status = (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
+    curl_close($curl);
+
+    if ($response === false) {
+        error_log('Andys Store email API request failed: ' . $curlError);
+        throw new RuntimeException('Could not send the email. Check the Resend API connection.');
+    }
+
+    if ($status < 200 || $status >= 300) {
+        $responseData = json_decode($response, true);
+        $errorName = is_array($responseData) && isset($responseData['name']) ? (string) $responseData['name'] : 'unknown';
+        error_log("Andys Store email API returned HTTP {$status} ({$errorName}).");
+        throw new RuntimeException('Could not send the email. Check the Resend API key, verified sender domain, and recipient.');
     }
 }
 
 /**
- * Sends a PIN to a user's email using the EmailService class.
+ * Sends a test PIN through the configured email API.
  */
 function send_pin_email(string $toEmail, string $toName, string $pin): array {
-    try {
-        $smtpConfig = mail_settings();
-    } catch (RuntimeException $ex) {
-        return ['success' => false, 'message' => $ex->getMessage()];
-    }
-
-    $emailService = new EmailService($smtpConfig);
-
     $subject = "Your Verification PIN";
     
     $htmlBody = "
@@ -172,7 +174,12 @@ function send_pin_email(string $toEmail, string $toName, string $pin): array {
     
     $altBody = "Hello {{name}},\n\nYour verification PIN is: " . $pin . "\n\nThis PIN will expire in 10 minutes. If you did not request this, please ignore this email.";
 
-    return $emailService->sendToUser($toEmail, $toName, $subject, $htmlBody, $altBody);
+    try {
+        send_account_email($toEmail, $toName, $subject, $htmlBody, $altBody);
+        return ['success' => true, 'message' => 'Email successfully sent.'];
+    } catch (Throwable $ex) {
+        return ['success' => false, 'message' => $ex->getMessage()];
+    }
 }
 
 function e($value): string { return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8'); }

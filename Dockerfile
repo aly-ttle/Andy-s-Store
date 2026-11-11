@@ -1,8 +1,8 @@
 FROM php:8.3-apache
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libzip-dev \
-    && docker-php-ext-install pdo_mysql zip \
+    && apt-get install -y --no-install-recommends libzip-dev libcurl4-openssl-dev \
+    && docker-php-ext-install pdo_mysql zip curl \
     && sed -i 's/^[[:space:]]*StartServers .*/StartServers 2/; s/^[[:space:]]*MinSpareServers .*/MinSpareServers 1/; s/^[[:space:]]*MaxSpareServers .*/MaxSpareServers 3/; s/^[[:space:]]*MaxRequestWorkers .*/MaxRequestWorkers 4/' /etc/apache2/mods-available/mpm_prefork.conf \
     && sed -i '/MaxRequestWorkers/i ServerLimit 4' /etc/apache2/mods-available/mpm_prefork.conf \
     && rm -rf /var/lib/apt/lists/*

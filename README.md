@@ -26,11 +26,11 @@ A responsive PHP + MySQL starter system styled to match the supplied reference: 
 - MySQL schema for users, categories, products, orders, and order items
 - Responsive layout for desktop and mobile
 
-### Email delivery (PHPMailer + Gmail SMTP)
-1. Turn on 2-Step Verification for the sending Gmail account and create an App Password in Google Account security settings.
-2. Copy `mail.local.php.example` to `mail.local.php` and fill in `ANDYS_GMAIL_ADDRESS` and `ANDYS_GMAIL_APP_PASSWORD` (or set them as real environment variables and restart Apache). Never commit `mail.local.php`.
-3. Install dependencies from the application directory with `composer install`.
-4. Open `check_mail_config.php?to=you@example.com` to send a test email.
+### Email delivery (Resend API)
+1. Create a Resend account, add a domain you own, and complete its DNS verification.
+2. Create a Resend API key. Configure `RESEND_API_KEY` and `RESEND_FROM_EMAIL` (an address at your verified domain) as environment variables. For local development, copy `mail.local.php.example` to `mail.local.php` and fill them in. Never commit `mail.local.php`.
+3. Ensure PHP cURL is enabled; the included Dockerfile installs it.
+4. For local testing only, open `check_mail_config.php?to=you@example.com` to send a test email. This test endpoint is excluded from the Docker deployment.
 
 Administrators generate six-digit verification codes in **Admin → Customers** and share them with customers manually. Codes expire after 24 hours and allow up to five attempts. The application emails password-reset PINs to verified customer accounts; reset PINs expire after 15 minutes and allow up to five attempts. No email credential is stored in the repository.
 
@@ -60,7 +60,7 @@ Administrators generate six-digit verification codes in **Admin → Customers** 
    ANDYS_ADMIN_PASSWORD=<choose-a-unique-strong-password>
    ```
 
-   Add `ANDYS_GMAIL_ADDRESS` and `ANDYS_GMAIL_APP_PASSWORD` if account verification and password-reset emails should be sent.
+   Add `RESEND_API_KEY` and `RESEND_FROM_EMAIL` for account verification and password-reset emails. The sender address must belong to a Resend-verified domain.
 4. Import `andys_store.sql` into the Railway MySQL database using the database's connection details and a MySQL client. Do this before opening the app; the application performs some schema upgrades when it connects.
 5. In Railway, create a public domain for the web service. Railway supplies the `PORT` value used by the included Dockerfile.
 6. Open the public domain and test storefront, sign-in, checkout, and (if configured) email delivery.

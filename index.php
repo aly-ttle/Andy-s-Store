@@ -181,6 +181,7 @@ try {
             "Welcome to Andy's Store! Your email verification code is: {$code}. It expires in 10 minutes.");
         } catch (Throwable $mailError) {
           $pdo->prepare('DELETE FROM email_verification_tokens WHERE user_id=?')->execute([$userId]);
+          $pdo->prepare("DELETE FROM users WHERE id=? AND role='customer' AND email_verified_at IS NULL")->execute([$userId]);
           throw $mailError;
         }
         flash('Account created. A verification code has been sent to your email. Check your inbox and spam folder.');
