@@ -1633,6 +1633,7 @@ function active($p,$current){return $p===$current?'active':'';}
   const list = document.getElementById('new-order-list');
   const enable = document.getElementById('enable-order-sound');
   const state = document.getElementById('sound-state');
+  const soundPreferenceKey = 'andys-admin-order-sound';
   let audioCtx = null, soundEnabled = false, pending = new Map(), lastChime = 0, busy = false;
   function ding() {
     if (!soundEnabled || !audioCtx) return;
@@ -1648,16 +1649,41 @@ function active($p,$current){return $p===$current?'active':'';}
       osc.start(now + delay); osc.stop(now + delay + 0.44);
     });
   }
-  enable.addEventListener('click', async () => {
+  async function enableSound(playTestSound) {
     try {
       const Ctx = window.AudioContext || window.webkitAudioContext;
       if (!Ctx) throw new Error('Web Audio is not supported by this browser.');
       if (!audioCtx) audioCtx = new Ctx();
       await audioCtx.resume(); soundEnabled = true;
       state.textContent = 'Order sound enabled. A ding repeats every 3 seconds while an order awaits your attention.';
-      enable.textContent = 'Sound enabled ✓'; ding();
-    } catch (e) { state.textContent = 'Could not enable sound. Check your browser audio settings.'; }
+      enable.textContent = 'Disable order sound';
+      if (playTestSound) ding();
+      return true;
+    } catch (e) {
+      state.textContent = 'Sound is saved, but your browser needs a click before it can play.';
+      enable.textContent = 'Click to enable order sound';
+      return false;
+    }
+  }
+  let soundPreferenceSaved = false;
+  try { soundPreferenceSaved = localStorage.getItem(soundPreferenceKey) === 'enabled'; } catch (e) {}
+  enable.addEventListener('click', async () => {
+    if (soundEnabled) {
+      soundEnabled = false;
+      soundPreferenceSaved = false;
+      try { localStorage.removeItem(soundPreferenceKey); } catch (e) {}
+      state.textContent = 'Order sound is off.';
+      enable.textContent = 'Enable order sound';
+      return;
+    }
+    soundPreferenceSaved = true;
+    try { localStorage.setItem(soundPreferenceKey, 'enabled'); } catch (e) {}
+    await enableSound(true);
   });
+  if (soundPreferenceSaved) enableSound(false);
+  document.addEventListener('pointerdown', () => {
+    if (soundPreferenceSaved && !soundEnabled) enableSound(false);
+  }, { once: true });
   function safeText(tag, cls, text) { const el = document.createElement(tag); if (cls) el.className = cls; el.textContent = text; return el; }
   async function acknowledge(id) {
     const data = new URLSearchParams({action:'acknowledge_order', order_id:String(id)});
@@ -1941,6 +1967,7 @@ function active($p,$current){return $p===$current?'active':'';}
 (() => {
   const enable = document.getElementById('enable-customer-order-sound');
   const state = document.getElementById('customer-order-sound-state');
+  const soundPreferenceKey = 'andys-customer-order-sound';
   const justPlacedOrderId = <?= (int) ($justPlacedOrderId ?? 0) ?>;
   const knownStatuses = new Map(
     Array.from(document.querySelectorAll('.customer-order-status'), element => [
@@ -1968,23 +1995,50 @@ function active($p,$current){return $p===$current?'active':'';}
     });
   }
 
-  enable.addEventListener('click', async () => {
+  async function enableSound(playTestSound) {
     try {
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
       if (!AudioContextClass) throw new Error('Web Audio is not supported.');
       if (!audioContext) audioContext = new AudioContextClass();
       await audioContext.resume();
       soundEnabled = true;
-      enable.textContent = 'Sound enabled ✓';
+      enable.textContent = 'Disable order sound';
       state.textContent = justPlacedOrderId
         ? `Order #${justPlacedOrderId} was placed. Sound is enabled for status updates.`
         : 'Sound is enabled for status updates while this page is open.';
-      ding();
-      poll();
+      if (playTestSound) ding();
+      return true;
     } catch (error) {
-      state.textContent = 'Could not enable sound. Check your browser audio settings.';
+      state.textContent = 'Sound is saved, but your browser needs a click before it can play.';
+      enable.textContent = 'Click to enable order sound';
+      return false;
     }
+  }
+
+  let soundPreferenceSaved = false;
+  try { soundPreferenceSaved = localStorage.getItem(soundPreferenceKey) === 'enabled'; } catch (error) {}
+  enable.addEventListener('click', async () => {
+    if (soundEnabled) {
+      soundEnabled = false;
+      soundPreferenceSaved = false;
+      try { localStorage.removeItem(soundPreferenceKey); } catch (error) {}
+      state.textContent = 'Order sound is off.';
+      enable.textContent = 'Enable order sound';
+      return;
+    }
+    soundPreferenceSaved = true;
+    try { localStorage.setItem(soundPreferenceKey, 'enabled'); } catch (error) {}
+    await enableSound(true);
+    poll();
   });
+  if (soundPreferenceSaved) {
+    enableSound(false).then(enabled => {
+      if (enabled && justPlacedOrderId) ding();
+    });
+  }
+  document.addEventListener('pointerdown', () => {
+    if (soundPreferenceSaved && !soundEnabled) enableSound(false);
+  }, { once: true });
 
   async function poll() {
     if (busy) return;
