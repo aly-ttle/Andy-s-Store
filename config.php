@@ -1,5 +1,5 @@
 <?php
-// Set Resend credentials as environment variables or in a local-only mail.local.php.
+// Set email provider credentials as environment variables or in a local-only mail.local.php.
 if (is_file(__DIR__ . '/mail.local.php')) { require_once __DIR__ . '/mail.local.php'; }
 
 // Load Composer dependencies.
@@ -99,28 +99,49 @@ function db(): PDO {
 }
 
 function mail_settings(): array {
-    $apiKey = trim((string) getenv('RESEND_API_KEY'));
-    $fromEmail = trim((string) getenv('RESEND_FROM_EMAIL'));
+    $provider = strtolower(trim((string) (getenv('MAIL_PROVIDER') ?: 'resend')));
+    if (!in_array($provider, ['resend', 'brevo'], true)) {
+        throw new RuntimeException('Email provider is invalid. Set MAIL_PROVIDER to resend or brevo.');
+    }
+
+    $apiKeyVariable = $provider === 'brevo' ? 'BREVO_API_KEY' : 'RESEND_API_KEY';
+    $fromEmailVariable = $provider === 'brevo' ? 'BREVO_FROM_EMAIL' : 'RESEND_FROM_EMAIL';
+    $apiKey = trim((string) getenv($apiKeyVariable));
+    $fromEmail = trim((string) getenv($fromEmailVariable));
     if ($apiKey === '' || !filter_var($fromEmail, FILTER_VALIDATE_EMAIL)) {
-        throw new RuntimeException('Email delivery is not configured. Set RESEND_API_KEY and RESEND_FROM_EMAIL.');
+        throw new RuntimeException("Email delivery is not configured. Set {$apiKeyVariable} and {$fromEmailVariable}.");
     }
     return [
+        'provider' => $provider,
         'api_key' => $apiKey,
-        'from' => "Andy's Store <{$fromEmail}>",
+        'from_email' => $fromEmail,
     ];
 }
 
 function send_account_email(string $to, string $name, string $subject, string $htmlBody, string $textBody): void {
     $cfg = mail_settings();
-    $payload = json_encode([
-        'from' => $cfg['from'],
-        'to' => [$to],
-        'subject' => $subject,
-        'html' => $htmlBody,
-        'text' => $textBody,
-    ], JSON_THROW_ON_ERROR);
+    if ($cfg['provider'] === 'brevo') {
+        $url = 'https://api.brevo.com/v3/smtp/email';
+        $payload = json_encode([
+            'sender' => ['name' => "Andy's Store", 'email' => $cfg['from_email']],
+            'to' => [['email' => $to, 'name' => $name]],
+            'subject' => $subject,
+            'htmlContent' => $htmlBody,
+        ], JSON_THROW_ON_ERROR);
+        $authorizationHeader = 'api-key: ' . $cfg['api_key'];
+    } else {
+        $url = 'https://api.resend.com/emails';
+        $payload = json_encode([
+            'from' => "Andy's Store <{$cfg['from_email']}>",
+            'to' => [$to],
+            'subject' => $subject,
+            'html' => $htmlBody,
+            'text' => $textBody,
+        ], JSON_THROW_ON_ERROR);
+        $authorizationHeader = 'Authorization: Bearer ' . $cfg['api_key'];
+    }
 
-    $curl = curl_init('https://api.resend.com/emails');
+    $curl = curl_init($url);
     if ($curl === false) {
         throw new RuntimeException('Could not initialize the email API request.');
     }
@@ -128,7 +149,7 @@ function send_account_email(string $to, string $name, string $subject, string $h
         CURLOPT_POST => true,
         CURLOPT_POSTFIELDS => $payload,
         CURLOPT_HTTPHEADER => [
-            'Authorization: Bearer ' . $cfg['api_key'],
+            $authorizationHeader,
             'Content-Type: application/json',
             'Accept: application/json',
         ],
@@ -144,14 +165,16 @@ function send_account_email(string $to, string $name, string $subject, string $h
 
     if ($response === false) {
         error_log('Andys Store email API request failed: ' . $curlError);
-        throw new RuntimeException('Could not send the email. Check the Resend API connection.');
+        throw new RuntimeException('Could not send the email. Check the email provider API connection.');
     }
 
     if ($status < 200 || $status >= 300) {
         $responseData = json_decode($response, true);
-        $errorName = is_array($responseData) && isset($responseData['name']) ? (string) $responseData['name'] : 'unknown';
-        error_log("Andys Store email API returned HTTP {$status} ({$errorName}).");
-        throw new RuntimeException('Could not send the email. Check the Resend API key, verified sender domain, and recipient.');
+        $errorCode = is_array($responseData)
+            ? (string) ($responseData['name'] ?? $responseData['code'] ?? 'unknown')
+            : 'unknown';
+        error_log("Andys Store {$cfg['provider']} email API returned HTTP {$status} ({$errorCode}).");
+        throw new RuntimeException('Could not send the email. Check the email API key, verified sender address, and recipient.');
     }
 }
 

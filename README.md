@@ -5,8 +5,7 @@ A responsive PHP + MySQL starter system styled to match the supplied reference: 
 ## Features
 - Customer registration and login (passwords stored with PHP `password_hash`)
 - Registration supports university students and LHS (Laboratory Highschool) students; high school accounts capture grade, section, and the HUMSS, ABM, or STEM strand for senior high school
-- New customer accounts require administrator approval before sign-in; admins can approve or reject accounts from the Customers page
-- Email verification for new customer accounts; customers must verify their address and receive administrator approval before sign-in
+- Email verification for new customer accounts; customers must verify their address before sign-in
 - Forgot-password recovery with one-time PINs sent to the customer's verified email; PINs expire after 15 minutes and allow up to five attempts
 - Separate admin sign-in route
 - Browse menu items, search, and filter by category
@@ -26,19 +25,15 @@ A responsive PHP + MySQL starter system styled to match the supplied reference: 
 - MySQL schema for users, categories, products, orders, and order items
 - Responsive layout for desktop and mobile
 
-### Email delivery (Resend API)
-1. Create a Resend account, add a domain you own, and complete its DNS verification.
-2. Create a Resend API key. Configure `RESEND_API_KEY` and `RESEND_FROM_EMAIL` (an address at your verified domain) as environment variables. For local development, copy `mail.local.php.example` to `mail.local.php` and fill them in. Never commit `mail.local.php`.
-3. Ensure PHP cURL is enabled; the included Dockerfile installs it.
-4. For local testing only, open `check_mail_config.php?to=you@example.com` to send a test email. This test endpoint is excluded from the Docker deployment.
+### Email delivery (Brevo or Resend API)
+1. For a free option that does not require owning a domain, create a Brevo account, add a sender email address you can access, and enter the verification code Brevo sends to it. Create a transactional email API key. Brevo recommends authenticating a domain for deliverability, but its sender setup permits email verification for an unauthenticated domain.
+2. In Render or Railway, set `MAIL_PROVIDER=brevo`, `BREVO_API_KEY`, and `BREVO_FROM_EMAIL`. For local development, copy `mail.local.php.example` to `mail.local.php` and fill in those values. Never commit `mail.local.php`.
+3. Resend remains available if you own a domain: set `MAIL_PROVIDER=resend`, `RESEND_API_KEY`, and `RESEND_FROM_EMAIL` to an address at your verified domain. If `MAIL_PROVIDER` is omitted, the app defaults to Resend for compatibility.
+4. Ensure PHP cURL is enabled; the included Dockerfile installs it. For local testing only, open `check_mail_config.php?to=you@example.com` to send a test email. This test endpoint is excluded from the Docker deployment.
 
-Administrators generate six-digit verification codes in **Admin → Customers** and share them with customers manually. Codes expire after 24 hours and allow up to five attempts. The application emails password-reset PINs to verified customer accounts; reset PINs expire after 15 minutes and allow up to five attempts. No email credential is stored in the repository.
+New customers receive a six-digit verification code by email. Codes expire after 10 minutes and allow up to five attempts. The application emails password-reset PINs to verified customer accounts; reset PINs expire after 15 minutes and allow up to five attempts. No email credential is stored in the repository.
 
-### New customer account approval
-1. A new customer registers and contacts the store administrator for a verification code.
-2. In **Admin → Customers**, generate a code and share it with the customer, who enters it on the **Verify your email** page.
-3. Review the account and select **Approve** or **Reject**. Both code verification and administrator approval are required before customer sign-in.
-4. Existing approved customer accounts are marked as email-verified when an older database is upgraded, preserving their access. New accounts must verify their address.
+After email verification, customers can sign in without administrator approval. Existing approved customer accounts are marked as email-verified when an older database is upgraded, preserving their access.
 
 ## Requirements
 - PHP 8.0+ with PDO MySQL enabled
@@ -60,7 +55,7 @@ Administrators generate six-digit verification codes in **Admin → Customers** 
    ANDYS_ADMIN_PASSWORD=<choose-a-unique-strong-password>
    ```
 
-   Add `RESEND_API_KEY` and `RESEND_FROM_EMAIL` for account verification and password-reset emails. The sender address must belong to a Resend-verified domain.
+   Add `MAIL_PROVIDER=brevo`, `BREVO_API_KEY`, and `BREVO_FROM_EMAIL` for free account-verification and password-reset email delivery. Verify the sender address in Brevo first.
 4. Import `andys_store.sql` into the Railway MySQL database using the database's connection details and a MySQL client. Do this before opening the app; the application performs some schema upgrades when it connects.
 5. In Railway, create a public domain for the web service. Railway supplies the `PORT` value used by the included Dockerfile.
 6. Open the public domain and test storefront, sign-in, checkout, and (if configured) email delivery.
@@ -73,7 +68,7 @@ The admin login uses `ANDYS_ADMIN_USERNAME` and `ANDYS_ADMIN_PASSWORD`; there is
 3. Open phpMyAdmin at `http://localhost/phpmyadmin`.
 4. Import `andys_store.sql`. This creates the `andys_store` database, tables, five categories, the original catalog, and the additional photo-based products. Product photos from your ZIP are included in the `products/` folder and their relative paths are stored in the products table.
 5. Configure the database with environment variables or copy `db.local.php.example` to `db.local.php` and set your local database values.
-6. Configure the Gmail email settings above for password-reset emails.
+6. Configure the email provider settings above if you want to send verification and password-reset emails.
 7. Visit the application URL.
 
 ## Configure admin sign-in

@@ -1,5 +1,6 @@
 <?php
-// Copy this file to mail.local.php and add your Resend API key and verified sender.
+// Copy this file to mail.local.php and add your provider API key and verified sender.
 // Never commit mail.local.php.
-putenv('RESEND_API_KEY=re_your_api_key');
-putenv('RESEND_FROM_EMAIL=verify@your-verified-domain.com');
+putenv('MAIL_PROVIDER=brevo');
+putenv('BREVO_API_KEY=your_brevo_api_key');
+putenv('BREVO_FROM_EMAIL=your-verified-sender@example.com');

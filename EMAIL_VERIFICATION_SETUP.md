@@ -8,7 +8,10 @@ Forgot-password requests send a 16-character reset PIN directly to the customer'
 1. Start Apache and MySQL in XAMPP.
 2. Import `andys_store.sql` in phpMyAdmin. Configure the database with environment variables or copy `db.local.php.example` to `db.local.php` and set your local values.
 3. Install dependencies from the project folder with `composer install` if needed.
-4. Configure Resend: add and verify a domain you own, create an API key, then set `RESEND_API_KEY` and `RESEND_FROM_EMAIL`. For local use, copy `mail.local.php.example` to `mail.local.php` and fill in those values. Keep `mail.local.php` private and out of Git.
+4. Configure email delivery with Brevo or Resend:
+   - **Brevo:** Create a free account, add a sender address you can access, and enter the verification code Brevo emails to that address. Create a transactional email API key. Set `MAIL_PROVIDER=brevo`, `BREVO_API_KEY`, and `BREVO_FROM_EMAIL` in Render. Domain authentication is recommended by Brevo but is not required to verify the sender address.
+   - **Resend:** Add and verify a domain you control, create an API key, then set `MAIL_PROVIDER=resend`, `RESEND_API_KEY`, and `RESEND_FROM_EMAIL`.
+   - For local use, copy `mail.local.php.example` to `mail.local.php` and fill in the values for your provider. Keep `mail.local.php` private and out of Git.
 5. Open `check_mail_config.php?to=you@example.com` to test delivery.
 
 ## Test
@@ -17,4 +20,4 @@ Forgot-password requests send a 16-character reset PIN directly to the customer'
 3. Sign in after verification; no administrator approval is needed.
 4. Use Forgot your password, request a PIN, and follow the emailed instructions to set a new password.
 
-If a message cannot be sent, check the Resend API key, verified sender domain, and PHP error log. Password reset responses intentionally do not reveal whether an email address has an account.
+If a message cannot be sent, check the provider API key, verified sender address, and PHP error log. Password reset responses intentionally do not reveal whether an email address has an account.
