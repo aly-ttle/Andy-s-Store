@@ -709,12 +709,20 @@ try {
     }
   }
 
+  $categories = [];
+  $products = [];
+  $productOptionMap = [];
+  $productImageMap = [];
+  $profile = null;
+  $user = current_user();
+  $search = trim($_GET['q'] ?? '');
+  $cat = (int) ($_GET['category'] ?? 0);
+
   $pdo = db();
   ensure_product_images_table($pdo);
   $categories=$pdo->query('SELECT * FROM categories WHERE is_active=1 ORDER BY id')->fetchAll();
   $user=current_user();
   if($user && $user['role']==='customer'){ $profileStmt=$pdo->prepare('SELECT * FROM users WHERE id=?'); $profileStmt->execute([$user['id']]); $profile=$profileStmt->fetch(); } else { $profile=null; }
-  $search=trim($_GET['q'] ?? ''); $cat=(int)($_GET['category'] ?? 0);
   $sql='SELECT p.*,c.name AS category_name,c.slug AS category_slug FROM products p LEFT JOIN categories c ON c.id=p.category_id WHERE p.is_available=1';
   $params=[];
   if(!$cat && $search===''){ $sql.=" AND c.slug='meals'"; }
@@ -728,7 +736,13 @@ try {
     $productOptionMap[(int) $productRow['id']] = get_product_options($pdo, (int) $productRow['id']);
     $productImageMap[(int) $productRow['id']] = get_product_images($pdo, (int) $productRow['id']);
   }
-} catch(Throwable $ex) { $error=$ex->getMessage(); $categories=$categories??[]; $products=$products??[]; $user=current_user(); }
+} catch(PDOException $ex) {
+  error_log('Andys Store database request failed: ' . $ex->getMessage());
+  $error = 'The store is temporarily unavailable. Please try again later.';
+} catch(Throwable $ex) {
+  $error=$ex->getMessage();
+  $user=current_user();
+}
 $flash=$_SESSION['flash']??''; unset($_SESSION['flash']);
 function active($p,$current){return $p===$current?'active':'';}
 ?>
