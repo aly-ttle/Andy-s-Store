@@ -125,6 +125,7 @@ function send_account_email(string $to, string $name, string $subject, string $h
         $mail->SMTPDebug = 0;
         $mail->Debugoutput = 'error_log';
         $mail->Host = $cfg['host'];
+        $mail->Timeout = 10;
         $mail->SMTPAuth = true;
         $mail->Username = $cfg['username'];
         $mail->Password = $cfg['password'];
@@ -192,21 +193,13 @@ function ensure_product_images_table(PDO $pdo): void {
         KEY fk_product_images_product (product_id),
         CONSTRAINT fk_product_images_product FOREIGN KEY (product_id) REFERENCES products (id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-    // Remove duplicate rows (same product + same image file), keeping the oldest one.
-    $pdo->exec("DELETE pi1 FROM product_images pi1
-        JOIN product_images pi2
-          ON pi1.product_id = pi2.product_id
-         AND pi1.image_url = pi2.image_url
-         AND pi1.id > pi2.id");
-    $legacyImages = $pdo->query("SELECT id,image_url FROM products WHERE image_url IS NOT NULL AND image_url<>''")->fetchAll();
-    $existingImage = $pdo->prepare('SELECT id FROM product_images WHERE product_id=? AND image_url=? LIMIT 1');
-    $insertImage = $pdo->prepare('INSERT INTO product_images(product_id,image_url,sort_order) VALUES(?,?,0)');
-    foreach ($legacyImages as $legacyImage) {
-        $existingImage->execute([$legacyImage['id'], $legacyImage['image_url']]);
-        if (!$existingImage->fetchColumn()) {
-            $insertImage->execute([$legacyImage['id'], $legacyImage['image_url']]);
-        }
-    }
+    $pdo->exec("INSERT INTO product_images(product_id,image_url,sort_order)
+        SELECT p.id,p.image_url,0
+        FROM products p
+        LEFT JOIN product_images pi
+          ON pi.product_id=p.id AND pi.image_url=p.image_url
+        WHERE p.image_url IS NOT NULL AND p.image_url<>''
+          AND pi.id IS NULL");
 }
 
 function get_product_images(PDO $pdo, int $productId): array {

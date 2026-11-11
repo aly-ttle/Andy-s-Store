@@ -38,6 +38,7 @@ if (!class_exists('EmailService')) {
             try {
                 $mail->isSMTP();
                 $mail->Host       = $this->host;
+                $mail->Timeout    = 10;
                 $mail->SMTPAuth   = true;
                 $mail->Username   = $this->username;
                 $mail->Password   = $this->password;

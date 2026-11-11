@@ -731,11 +731,26 @@ try {
   if($search!==''){$sql.=' AND (p.name LIKE ? OR p.description LIKE ?)';$params[]='%'.$search.'%';$params[]='%'.$search.'%';}
   $sql.=' ORDER BY p.created_at DESC';
   $st=$pdo->prepare($sql);$st->execute($params);$products=$st->fetchAll();
-  $productOptionMap = [];
-  $productImageMap = [];
-  foreach ($products as $productRow) {
-    $productOptionMap[(int) $productRow['id']] = get_product_options($pdo, (int) $productRow['id']);
-    $productImageMap[(int) $productRow['id']] = get_product_images($pdo, (int) $productRow['id']);
+  $productIds = array_map(static fn(array $productRow): int => (int) $productRow['id'], $products);
+  if ($productIds) {
+    $productPlaceholders = implode(',', array_fill(0, count($productIds), '?'));
+    $optionsStmt = $pdo->prepare("SELECT product_id,option_name,price FROM product_options WHERE product_id IN ($productPlaceholders) ORDER BY product_id,id");
+    $optionsStmt->execute($productIds);
+    foreach ($optionsStmt->fetchAll() as $optionRow) {
+      $productOptionMap[(int) $optionRow['product_id']][] = $optionRow;
+    }
+
+    $imagesStmt = $pdo->prepare("SELECT id,product_id,image_url FROM product_images WHERE product_id IN ($productPlaceholders) ORDER BY product_id,sort_order,id");
+    $imagesStmt->execute($productIds);
+    $seenProductImages = [];
+    foreach ($imagesStmt->fetchAll() as $imageRow) {
+      $productId = (int) $imageRow['product_id'];
+      if (isset($seenProductImages[$productId][$imageRow['image_url']])) {
+        continue;
+      }
+      $seenProductImages[$productId][$imageRow['image_url']] = true;
+      $productImageMap[$productId][] = $imageRow;
+    }
   }
 } catch(PDOException $ex) {
   error_log('Andys Store database request failed: ' . $ex->getMessage());
