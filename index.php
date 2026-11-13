@@ -6,6 +6,9 @@ $adminSection = $_GET['section'] ?? 'dashboard';
 if (!in_array($adminSection, ['dashboard', 'orders', 'products', 'customers', 'reports', 'settings'], true)) {
   $adminSection = 'dashboard';
 }
+if ($page === 'admin-dashboard') {
+  require_admin();
+}
 $error = '';
 
 function save_product_images(): array {
@@ -1222,8 +1225,6 @@ function active($p,$current){return $p===$current?'active':'';}
   </main>
 
 <?php elseif ($page === 'admin-dashboard'): ?>
-  <?php require_admin(); ?>
-
   <?php if (!isset($_SESSION['admin_order_watermark'])): ?>
     <?php $_SESSION['admin_order_watermark'] = (int) $pdo->query('SELECT COALESCE(MAX(id),0) FROM orders')->fetchColumn(); ?>
     <?php $_SESSION['admin_checked_orders'] = []; ?>
