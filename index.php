@@ -198,8 +198,21 @@ try {
         }
 
         $pdo = db();
+        $existingEmail = $pdo->prepare('SELECT id FROM users WHERE email=? LIMIT 1');
+        $existingEmail->execute([$email]);
+        if ($existingEmail->fetchColumn()) {
+          throw new Exception('An account already uses this email address. Sign in or enter a different email.');
+        }
+
         $stmt = $pdo->prepare("INSERT INTO users(name,email,password_hash,role,account_status,phone,school_type,course,year_level,strand,section) VALUES(?,?,?,'customer','approved',?,?,?,?,?,?)");
-        $stmt->execute([$name, $email, password_hash($pass, PASSWORD_DEFAULT), $phone, $schoolType, $course, $year, $strand, $section]);
+        try {
+          $stmt->execute([$name, $email, password_hash($pass, PASSWORD_DEFAULT), $phone, $schoolType, $course, $year, $strand, $section]);
+        } catch (PDOException $ex) {
+          if ((int) ($ex->errorInfo[1] ?? 0) === 1062) {
+            throw new Exception('An account already uses this email address. Sign in or enter a different email.');
+          }
+          throw $ex;
+        }
         $userId = (int) $pdo->lastInsertId();
         $code = (string) random_int(100000, 999999);
         $pdo->prepare('INSERT INTO email_verification_tokens(user_id,token_hash,expires_at,attempts,requested_at) VALUES(?,?,DATE_ADD(UTC_TIMESTAMP(), INTERVAL 10 MINUTE),0,UTC_TIMESTAMP()) ON DUPLICATE KEY UPDATE token_hash=VALUES(token_hash),expires_at=VALUES(expires_at),attempts=0,requested_at=VALUES(requested_at)')
@@ -214,13 +227,18 @@ try {
           throw $mailError;
         }
         flash('Account created. A verification code has been sent to your email. Check your inbox and spam folder.');
+        $_SESSION['verification_email'] = $email;
         redirect('index.php?page=verify-email');
 
       case 'verify_customer_email':
         $email = strtolower(trim($_POST['email'] ?? ''));
         $code = trim($_POST['verification_code'] ?? '');
-        if (!filter_var($email, FILTER_VALIDATE_EMAIL) || !preg_match('/^[0-9]{6}$/', $code)) {
-          throw new Exception('The verification code is invalid or expired. Please create a new request or contact support.');
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+          throw new Exception('Enter the valid email address used to create your account.');
+        }
+        $_SESSION['verification_email'] = $email;
+        if (!preg_match('/^[0-9]{6}$/', $code)) {
+          throw new Exception('Enter a valid six-digit verification code.');
         }
 
         $pdo = db();
@@ -228,24 +246,57 @@ try {
         $stmt->execute([$email]);
         $verification = $stmt->fetch();
         if (!$verification || !(int) $verification['is_valid'] || (int) $verification['attempts'] >= 5) {
-          if ($verification) {
-            $pdo->prepare('DELETE FROM email_verification_tokens WHERE user_id=?')->execute([$verification['id']]);
-          }
-          throw new Exception('The verification code is invalid or expired. Please create a new request or contact support.');
+          throw new Exception('The verification code is invalid or expired. Request a new code below.');
         }
         if (!hash_equals($verification['token_hash'], hash('sha256', $code))) {
-          if ((int) $verification['attempts'] >= 4) {
-            $pdo->prepare('DELETE FROM email_verification_tokens WHERE user_id=?')->execute([$verification['id']]);
-          } else {
-            $pdo->prepare('UPDATE email_verification_tokens SET attempts=attempts+1 WHERE user_id=?')->execute([$verification['id']]);
-          }
-          throw new Exception('The verification code is invalid or expired. Please create a new request or contact support.');
+          $pdo->prepare('UPDATE email_verification_tokens SET attempts=attempts+1 WHERE user_id=?')->execute([$verification['id']]);
+          throw new Exception('That code is incorrect. Check the latest email, or request a new code below.');
         }
         $pdo->prepare('UPDATE users SET email_verified_at=UTC_TIMESTAMP() WHERE id=? AND role=\'customer\'')
           ->execute([$verification['id']]);
         $pdo->prepare('DELETE FROM email_verification_tokens WHERE user_id=?')->execute([$verification['id']]);
         flash('Email verified successfully. You can now sign in.');
         redirect('index.php?page=login');
+
+      case 'resend_customer_verification':
+        $email = strtolower(trim($_POST['email'] ?? ''));
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+          throw new Exception('Enter the email address used to create your account.');
+        }
+        $_SESSION['verification_email'] = $email;
+        $pdo = db();
+        $stmt = $pdo->prepare("SELECT u.id,u.name,u.email,v.requested_at FROM users u LEFT JOIN email_verification_tokens v ON v.user_id=u.id WHERE u.email=? AND u.role='customer' AND u.email_verified_at IS NULL AND u.account_status<>'rejected' LIMIT 1");
+        $stmt->execute([$email]);
+        $customer = $stmt->fetch();
+        if (!$customer) {
+          flash('If an unverified account uses that email, a new code will be sent. Check your inbox and spam folder.');
+          $_SESSION['verification_email'] = $email;
+          redirect('index.php?page=verify-email');
+        }
+        if ($customer['requested_at']) {
+          $cooldown = $pdo->prepare('SELECT requested_at > DATE_SUB(UTC_TIMESTAMP(), INTERVAL 60 SECOND) FROM email_verification_tokens WHERE user_id=?');
+          $cooldown->execute([$customer['id']]);
+          if ($cooldown->fetchColumn()) {
+            throw new Exception('Please wait one minute between code requests, then try again.');
+          }
+        }
+
+        $code = (string) random_int(100000, 999999);
+        $pdo->prepare('INSERT INTO email_verification_tokens(user_id,token_hash,expires_at,attempts,requested_at) VALUES(?,?,DATE_ADD(UTC_TIMESTAMP(), INTERVAL 10 MINUTE),0,UTC_TIMESTAMP()) ON DUPLICATE KEY UPDATE token_hash=VALUES(token_hash),expires_at=VALUES(expires_at),attempts=0,requested_at=VALUES(requested_at)')
+          ->execute([$customer['id'], hash('sha256', $code)]);
+        try {
+          $safeName = e($customer['name']);
+          $safeCode = e($code);
+          send_account_email($customer['email'], $customer['name'], "Your Andy's Store verification code",
+            "<div style=\"font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#333\"><h2>Hello {$safeName}</h2><p>Your new verification code is:</p><p style=\"font-size:32px;font-weight:bold;letter-spacing:8px;background:#f7eaf0;padding:18px;text-align:center\">{$safeCode}</p><p>This code expires in 10 minutes. Only the latest code will work.</p></div>",
+            "Your Andy's Store verification code is: {$code}. It expires in 10 minutes. Only the latest code will work.");
+        } catch (Throwable $mailError) {
+          $pdo->prepare('DELETE FROM email_verification_tokens WHERE user_id=?')->execute([$customer['id']]);
+          throw $mailError;
+        }
+        flash('A new verification code was sent. Use the latest code from your inbox.');
+        $_SESSION['verification_email'] = $email;
+        redirect('index.php?page=verify-email');
 
       case 'login':
         $email = strtolower(trim($_POST['email'] ?? ''));
@@ -1088,9 +1139,14 @@ function active($p,$current){return $p===$current?'active':'';}
         <p class="muted">Enter the six-digit verification code sent to your registered email address. The code expires in 10 minutes.</p>
         <form method="post" class="auth-form">
           <input type="hidden" name="action" value="verify_customer_email">
-          <label>Email address<input name="email" type="email" required placeholder="you@university.edu"></label>
+          <label>Email address<input name="email" type="email" required value="<?= e($_SESSION['verification_email'] ?? '') ?>" placeholder="you@university.edu"></label>
           <label>Verification code<input name="verification_code" inputmode="numeric" autocomplete="one-time-code" required minlength="6" maxlength="6" pattern="[0-9]{6}" placeholder="6-digit code"></label>
           <button class="pill full">Verify email address</button>
+        </form>
+        <form method="post" class="auth-form verification-resend-form">
+          <input type="hidden" name="action" value="resend_customer_verification">
+          <label>Email address for a new code<input name="email" type="email" required value="<?= e($_SESSION['verification_email'] ?? '') ?>" placeholder="you@university.edu"></label>
+          <button class="outline full">Resend verification code</button>
         </form>
       <?php else: ?>
       <form method="post" class="auth-form">

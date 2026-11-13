@@ -6,6 +6,7 @@ A responsive PHP + MySQL starter system styled to match the supplied reference: 
 - Customer registration and login (passwords stored with PHP `password_hash`)
 - Registration supports university students and LHS (Laboratory Highschool) students; high school accounts capture grade, section, and the HUMSS, ABM, or STEM strand for senior high school
 - Email verification for new customer accounts; customers must verify their address before sign-in
+- Verification codes can be resent with a cooldown, and duplicate email addresses are rejected
 - Forgot-password recovery with one-time PINs sent to the customer's verified email; PINs expire after 15 minutes and allow up to five attempts
 - Separate admin sign-in route
 - Browse menu items, search, and filter by category
@@ -31,6 +32,9 @@ A responsive PHP + MySQL starter system styled to match the supplied reference: 
 2. In Render or Railway, set `MAIL_PROVIDER=brevo`, `BREVO_API_KEY`, and `BREVO_FROM_EMAIL`. For local development, copy `mail.local.php.example` to `mail.local.php` and fill in those values. Never commit `mail.local.php`.
 3. Resend remains available if you own a domain: set `MAIL_PROVIDER=resend`, `RESEND_API_KEY`, and `RESEND_FROM_EMAIL` to an address at your verified domain. If `MAIL_PROVIDER` is omitted, the app defaults to Resend for compatibility.
 4. Ensure PHP cURL is enabled; the included Dockerfile installs it. For local testing only, open `check_mail_config.php?to=you@example.com` to send a test email. This test endpoint is excluded from the Docker deployment.
+
+### Optional production demo customers
+To add the 25 clearly labeled, synthetic, unverified customer records to a database for dashboard testing, open `seed_demo_customers.sql` in MySQL Workbench, select the existing store schema, and execute it once. Do not rerun `andys_store.sql`. The demo addresses use the reserved `.invalid` domain, so they cannot receive mail or sign in. The seed script is excluded from the Docker image. Avoid adding demo rows to a live customer directory unless you specifically need them there.
 
 New customers receive a six-digit verification code by email. Codes expire after 10 minutes and allow up to five attempts. The application emails password-reset PINs to verified customer accounts; reset PINs expire after 15 minutes and allow up to five attempts. No email credential is stored in the repository.
 

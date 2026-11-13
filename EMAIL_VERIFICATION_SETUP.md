@@ -2,6 +2,8 @@
 
 Customer registration automatically emails a six-digit verification code to the address entered during signup. Codes expire after 10 minutes and allow up to five attempts. Customers can sign in after verifying their email; administrator approval is not required.
 
+If a code is incorrect or expired, use **Resend verification code** on the Verify Email page. New requests are limited to one per minute; only the newest code works. Each email address can be used for one account.
+
 Forgot-password requests send a 16-character reset PIN directly to the customer's verified email address. Reset PINs expire after 15 minutes and failed attempts are limited.
 
 ## Setup
