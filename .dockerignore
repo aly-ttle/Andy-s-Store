@@ -7,3 +7,4 @@ db.local.php
 uploads/*
 check_mail_config.php
 seed_demo_customers.sql
+cleanup_duplicate_unverified_customers.sql

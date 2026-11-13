@@ -36,6 +36,9 @@ A responsive PHP + MySQL starter system styled to match the supplied reference: 
 ### Optional production demo customers
 To add the 25 clearly labeled, synthetic, unverified customer records to a database for dashboard testing, open `seed_demo_customers.sql` in MySQL Workbench, select the existing store schema, and execute it once. Do not rerun `andys_store.sql`. The demo addresses use the reserved `.invalid` domain, so they cannot receive mail or sign in. The seed script is excluded from the Docker image. Avoid adding demo rows to a live customer directory unless you specifically need them there.
 
+### Clean duplicate unverified customers
+Back up the live database, then run `cleanup_duplicate_unverified_customers.sql` once in MySQL Workbench against the existing store schema. It keeps a verified account when present; otherwise it keeps the newest unverified record for each email and removes only older unverified duplicates that have no orders. It adds a unique email index when no duplicate email groups remain. Any remaining duplicates are reported for manual review. This cleanup script is excluded from the Docker image; do not rerun `andys_store.sql`.
+
 New customers receive a six-digit verification code by email. Codes expire after 10 minutes and allow up to five attempts. The application emails password-reset PINs to verified customer accounts; reset PINs expire after 15 minutes and allow up to five attempts. No email credential is stored in the repository.
 
 After email verification, customers can sign in without administrator approval. Existing approved customer accounts are marked as email-verified when an older database is upgraded, preserving their access.
